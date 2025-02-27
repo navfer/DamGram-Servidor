@@ -319,6 +319,13 @@ fun Application.configureRouting() {
                 call.respond(HttpStatusCode.BadRequest, "Error: ${e.message}")
             }
         }
+
+        /**
+         * Permite al usuario registrado iniciar sesión
+         */
+        post("/auth/login"){
+
+        }
     }
 
 }
