@@ -33,4 +33,8 @@ dependencies {
     testImplementation(libs.kotlin.test.junit)
     implementation("org.mongodb:mongodb-driver-kotlin-coroutine:4.10.1")
     implementation("at.favre.lib:bcrypt:0.10.2")
+
+    //JWT
+    implementation(libs.ktor.server.auth)
+    implementation(libs.ktor.server.auth.jwt)
 }

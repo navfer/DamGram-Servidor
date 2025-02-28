@@ -1,5 +1,6 @@
 package com.navfer
 
+import at.favre.lib.crypto.bcrypt.BCrypt
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import com.mongodb.ConnectionString
@@ -19,13 +20,50 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.Serializable
 import org.bson.codecs.configuration.CodecRegistries.fromProviders
 import org.bson.codecs.configuration.CodecRegistries.fromRegistries
 import org.bson.codecs.pojo.PojoCodecProvider
 import org.bson.types.ObjectId
+import java.util.*
 
 fun Application.configureRouting() {
 
+    //JWT
+    val myRealm = environment.config.property("jwt.realm").getString()
+    val secret = environment.config.property("jwt.secret").getString()
+    val issuer = environment.config.property("jwt.issuer").getString()
+    val audience = environment.config.property("jwt.audience").getString()
+
+    install(Authentication) {
+        jwt("jwt-auth") {
+            realm = myRealm
+
+            // Verifica que el token sea un token válido así como la signatura
+            verifier(JWT
+                .require(Algorithm.HMAC256(secret))
+                .withAudience(audience)
+                .withIssuer(issuer)
+                .build())
+
+            // Valida el payload
+            validate { credential ->
+                if (credential.payload.getClaim("username").asString().isNotEmpty()) {
+                    JWTPrincipal(credential.payload)
+                } else {
+                    null
+                }
+            }
+
+            // Configura una respuesta cuando la autenticación falle
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, "Token is not valid or has expired")
+            }
+        }
+    }
+
+
+    //Mongo DB
     val pojoCodecRegistry = fromRegistries(
         MongoClientSettings.getDefaultCodecRegistry(),
         fromProviders(PojoCodecProvider.builder().automatic(true).build())
@@ -84,6 +122,34 @@ fun Application.configureRouting() {
         }
 
         /**
+         * ESTO NO FUNCIONA ------------------------------------------------------------------------------
+         * error -> Error: state should be: hexString has 24 characters
+         */
+        get("/users/{username}") {
+
+            try{
+                //Coge el parámetro y lo transforma a ObjectId
+                val username = call.parameters["username"].toString()
+                val user = mu.getUserByUsername(username)
+                if (user != null){
+                    //println("Usuario encontrado: id=${user.id}, username=${user.username}")
+                    val userJson = UserSerializable(
+                        id = user.id.toHexString(),
+                        username = user.username,
+                        password = user.password,
+                        avatar = user.avatar
+                    )
+                    call.respond(HttpStatusCode.OK, userJson)
+                }else{
+                    call.respond(HttpStatusCode.NotFound, "No se ha encontrado el usuario")
+                }
+
+            }catch(e:Exception){
+                call.respond(HttpStatusCode.InternalServerError, "Error: ${e.message}")
+            }
+        }
+
+        /**
          * Registra nuevo usuario
          */
         post("/user") {
@@ -101,11 +167,12 @@ fun Application.configureRouting() {
                     return@post
                 }
 
-
+                //Encriptamos la contraseña del usuario para guardarla en la base de datos
+                val bcryptHashPassword = BCrypt.withDefaults().hashToString(12, usuarioJson.password.toCharArray());
                 val nuevoUsuario = User(
                     id = ObjectId(),  // Generar un nuevo ID
                     username = usuarioJson.username,
-                    password = usuarioJson.password,
+                    password = bcryptHashPassword,
                     avatar = usuarioJson.avatar
                 )
 
@@ -150,7 +217,6 @@ fun Application.configureRouting() {
                         id = it.id.toString(),
                         userId = it.userId.toString(),
                         image = it.image,
-                        public = it.public,
                         timestamp = it.timestamp,
                         comments = it.comments.map { comment ->
                             CommentSerializable(
@@ -186,7 +252,6 @@ fun Application.configureRouting() {
                         id = post.id.toString(),
                         userId = post.userId.toString(),
                         image = post.image,
-                        public = post.public,
                         timestamp = post.timestamp,
                         comments = post.comments.map { comment ->
                             CommentSerializable(
@@ -221,7 +286,6 @@ fun Application.configureRouting() {
                         id = it.id.toString(),
                         userId = it.userId.toString(),
                         image = it.image,
-                        public = it.public,
                         timestamp = it.timestamp,
                         comments = it.comments.map { comment ->
                             CommentSerializable(
@@ -253,7 +317,6 @@ fun Application.configureRouting() {
                     id = ObjectId(),
                     userId = ObjectId(postJson.userId),
                     image = postJson.image,
-                    public = postJson.public,
                     timestamp = System.currentTimeMillis(),
                     comments = emptyList(),
                     likes = emptyList()
@@ -320,11 +383,39 @@ fun Application.configureRouting() {
             }
         }
 
+        @Serializable
+        data class LoginRequest(val username: String, val password: String)
         /**
          * Permite al usuario registrado iniciar sesión
          */
         post("/auth/login"){
+            try {
+                //Credenciales enviado por el cliente
+                val credentials = call.receive<LoginRequest>()
+                val user = mu.getUserByUsername(credentials.username)
 
+                //si no es nulo verificamos que la contraseña sea la misma que la encriptada de la base de datos
+                if (user != null) {
+                    val result = BCrypt.verifyer().verify(credentials.password.toCharArray(), user.password)
+                    if(result.verified){
+                        val token = JWT.create()
+                            .withAudience(audience)
+                            .withIssuer(issuer)
+                            .withClaim("username", user.username)
+                            .withExpiresAt(Date(System.currentTimeMillis() + 60000*60*24))
+                            .sign(Algorithm.HMAC256(secret))
+
+                        call.respond(mapOf("token" to token))
+                        //call.respond(HttpStatusCode.OK)
+                    }else{
+                        call.respond(HttpStatusCode.Unauthorized)
+                    }
+                } else {
+                    call.respond(HttpStatusCode.Unauthorized, mapOf("message" to "Credenciales incorrectas"))
+                }
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, "Error: ${e.message}")
+            }
         }
     }
 

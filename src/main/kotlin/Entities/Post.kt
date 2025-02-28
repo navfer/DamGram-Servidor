@@ -8,7 +8,6 @@ data class Post (
     @BsonId val id: ObjectId,
     val userId: ObjectId,
     val image: String,
-    val public: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
     val comments: List<Comment> = emptyList(),
     val likes: List<Like> = emptyList()
@@ -32,7 +31,6 @@ data class PostSerializable (
     val id: String,
     val userId: String,
     val image: String,
-    val public: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
     val comments: List<CommentSerializable> = emptyList(),
     val likes: List<LikeSerializable> = emptyList()
