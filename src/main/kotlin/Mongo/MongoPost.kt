@@ -4,8 +4,9 @@ import com.mongodb.client.model.Filters
 import com.mongodb.client.model.Updates
 import com.mongodb.kotlin.client.coroutine.MongoDatabase
 import com.navfer.Repository.PostRepository
-import com.navfer.clases.Comment
-import com.navfer.clases.Like
+import com.navfer.clases.Comentario
+import com.navfer.clases.CommentSerializable
+import com.navfer.clases.LikeSerializable
 import com.navfer.clases.Post
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
@@ -28,12 +29,16 @@ class MongoPost(private val db: MongoDatabase): PostRepository {
         return posts.find(Filters.eq("userId", userId)).toList()
     }
 
-    override suspend fun createPost(post: Post): Boolean {
+    override suspend fun createPost(post: Post): String? {
         val result = posts.insertOne(post)
-        return  result.wasAcknowledged()
+        if(result != null) {
+            return result.insertedId.toString()
+        } else{
+            return null
+        }
     }
 
-    override suspend fun addComment(postId: ObjectId, comment: Comment): Boolean {
+    override suspend fun addComment(postId: ObjectId, comment: Comentario): Boolean {
          try {
             val result = posts.updateOne(
                 Filters.eq("_id", postId),  //Busca el post con esa ID
@@ -46,7 +51,7 @@ class MongoPost(private val db: MongoDatabase): PostRepository {
     }
 
     override suspend fun addLike(postId: ObjectId, userId: ObjectId): Boolean {
-        val newLike = Like(userId)
+        val newLike = LikeSerializable(userId.toString())
         try {
             val result = posts.updateOne(
                 Filters.eq("_id", postId),
