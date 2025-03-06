@@ -172,7 +172,7 @@ fun Application.configureRouting() {
         /**
          * Registra nuevo usuario
          */
-        post("/user") {
+        post("/users") {
             try {
 
                 val usuarioJson = call.receive<UserSerializable>()
